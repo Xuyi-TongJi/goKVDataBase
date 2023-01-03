@@ -60,7 +60,7 @@ type AeLoop struct {
 	AeFileEvents map[int]*AeFileEvent
 	// AeTimeEvent链表头节点
 	AeTimeEvents *AeTimeEvent
-	// fileEvent文件描述符
+	// fileEvent文件描述符 -> 即Epoll对象的文件描述符
 	fileEventFd     int
 	timeEventNextId int
 	stop            bool
@@ -259,6 +259,7 @@ func (loop *AeLoop) AeProcess(fileEvents []*AeFileEvent, timeEvents []*AeTimeEve
 // AeMain AeLoop 主流程
 // AeWait <-> AeProcess
 func (loop *AeLoop) AeMain() {
+	log.Printf("[AE LOOP AEMAIN] Aeloop is running...\n")
 	for !loop.stop {
 		fileEvents, timeEvents, err := loop.AeWait()
 		if err != nil {
@@ -274,12 +275,16 @@ func (loop *AeLoop) AeMain() {
 
 // AeLoopCreate 创建一个AeLoop
 func AeLoopCreate(server *Server) (*AeLoop, error) {
-	// 系统调用：创建EPOLL监听文件描述符
+	// 系统调用：创建EPOLL对象文件描述符
+	epollFd, err := unix.EpollCreate1(0)
+	if err != nil {
+		return nil, err
+	}
 	loop := &AeLoop{
 		AeFileEvents:    make(map[int]*AeFileEvent, 0),
 		AeTimeEvents:    nil,
 		timeEventNextId: 1,
-		fileEventFd:     -1,
+		fileEventFd:     epollFd,
 		stop:            false,
 		server:          server,
 	}

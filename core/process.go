@@ -1,6 +1,8 @@
 package core
 
 import (
+	"errors"
+	"fmt"
 	. "goRedis/data_structure"
 	"goRedis/net"
 	"log"
@@ -33,7 +35,7 @@ func readQueryFromClient(loop *AeLoop, fd int, extra interface{}) {
 	client := extra.(*Client)
 	// expand if needed
 	client.expandQueryBufIfNeeded()
-	// unix C read
+	// unix C read 至多读一个MaxQueryLength
 	n, err := net.Read(fd, client.queryBuffer[client.queryLength:])
 	if err != nil {
 		log.Printf("[READ QUERY FROM CLIENT ERROR] Read query from client %d error, err = %s\n", client.fd, err)
@@ -61,14 +63,19 @@ func sendReplyToClient(loop *AeLoop, fd int, extra interface{}) {
 // processRequest 处理请求 功能：将请求string转为Client对象中的args
 // 1. 获取请求协议类型[INLINE/BULK]
 // 2. 将请求[]byte解析道client.args
-// 解析失败，则断开连接
+// 解析发生错误，则断开连接
+// 未完整解析一条指令，则保留queryBuffer和queryLength，到下一次Read(readQueryFromClient)返回后再处理
+// 处理一定是从queryBuffer的第一个字节开始
 func processRequest(client *Client) error {
-	// 只要还有请求要处理，则处理请求
+	// 只要缓冲区还有未处理的queryBuffer就进行处理
 	for client.queryLength > 0 {
-		if client.queryBuffer[0] == '*' {
-			client.cmdType = BULK
-		} else {
-			client.cmdType = INLINE
+		// 没有处理到一半的请求
+		if !client.isQueryProcessing {
+			if client.queryBuffer[0] == '*' {
+				client.cmdType = BULK
+			} else {
+				client.cmdType = INLINE
+			}
 		}
 		// query -> args
 		var err error
@@ -80,11 +87,11 @@ func processRequest(client *Client) error {
 		if err != nil {
 			return err
 		}
-		if len(client.args) > 0 {
-			processCommand(client)
+		// 不能进行下一次processCommand(没有完整解析，即完整Read完整这一条指令),则break，等待下一次Read
+		if !client.canDoNextCommandHandle {
+			break
 		} else {
-			// args == 0 空请求
-			ResetClient(client)
+			processCommand(client)
 		}
 	}
 	return nil
@@ -92,12 +99,14 @@ func processRequest(client *Client) error {
 
 // handleInlineRequest 解析inline请求
 // query string -> client.args
+// queryBuffer至少一个MaxQueryLength大小，如果在一个MaxQueryLength大小还未找到CRLF,则为不合法请求，直接断开连接
 // 滑动窗口
+// error -> 解析发生错误，则返回error，断开连接
 func handleInlineRequest(client *Client) error {
-	crlfIndex, err := client.findCrlfFromQueryBuffer()
-	if err != nil {
-		log.Printf("[HANDLE INLINE REQUEST ERROR] Handle lnline request error, err = %s\n", err)
-		return err
+	// new request
+	crlfIndex := client.findCrlfFromQueryBuffer()
+	if crlfIndex == -1 {
+		return errors.New(fmt.Sprintf("Query Length overflows\n"))
 	}
 	values := strings.Split(string(client.queryBuffer[:crlfIndex]), " ")
 	client.queryLength -= crlfIndex + 2
@@ -109,19 +118,86 @@ func handleInlineRequest(client *Client) error {
 			Val:  val,
 		}
 	}
+	client.isQueryProcessing = false
+	client.canDoNextCommandHandle = true
 	return nil
 }
 
 // handleBulkRequeset 解析Bulk请求
 // query string -> client.args
 // 滑动窗口
+// error -> 解析发生错误，则返回error，断开连接
 func handleBulkRequest(client *Client) error {
-
+	// new request -> bulkNum == 0
+	if client.bulkNum == 0 {
+		crlfIndex := client.findCrlfFromQueryBuffer()
+		if crlfIndex == -1 {
+			return errors.New(fmt.Sprintf("Query Length overflows\n"))
+		}
+		bNum, err := client.getNumberFromQuery(1, crlfIndex)
+		if err != nil {
+			return errors.New("[CLIENT HANDLE BULK REQUEST ERROR] Illegal client protocol format")
+		}
+		client.isQueryProcessing = true
+		client.canDoNextCommandHandle = false
+		client.bulkNum = bNum
+		// move sliding window
+		client.queryBuffer = append(client.queryBuffer[crlfIndex+2:])
+		client.queryLength -= crlfIndex + 2
+	}
+	for client.bulkNum > 0 {
+		if len(client.queryBuffer) == 0 {
+			break
+		}
+		// find bulkLength
+		if client.bulkLength == 0 {
+			if client.queryBuffer[0] != '$' {
+				return errors.New("[CLIENT HANDLE BULK REQUEST ERROR] Illegal client protocol format")
+			}
+			crlfIndex := client.findCrlfFromQueryBuffer()
+			if crlfIndex == -1 {
+				break
+			}
+			bLength, err := client.getNumberFromQuery(1, crlfIndex)
+			if err != nil {
+				return errors.New("[CLIENT HANDLE BULK REQUEST ERROR] Illegal client protocol format")
+			}
+			client.bulkLength = bLength
+			// move sliding window
+			client.queryBuffer = append(client.queryBuffer[crlfIndex+2:])
+			client.queryLength -= crlfIndex + 2
+		}
+		// find next string element
+		crlfIndex := client.findCrlfFromQueryBuffer()
+		if crlfIndex == -1 {
+			break
+		}
+		// build client arg
+		newArg := &DbObject{
+			Type: STR,
+			Val:  string(client.queryBuffer[:crlfIndex]),
+		}
+		client.args = append(client.args, newArg)
+		client.bulkLength = 0
+		client.queryBuffer = append(client.queryBuffer[:crlfIndex+2])
+		client.queryLength -= crlfIndex + 2
+		client.bulkNum -= 1
+	}
+	// 下一次command可以执行
+	if client.bulkNum == 0 {
+		client.isQueryProcessing = false
+		client.canDoNextCommandHandle = true
+	}
 	return nil
 }
 
 // processCommand 根据client中的args，进行命令执行
-// 如果请求无法执行，则发送错误消息
+// 如果请求无法执行（非法请求），则向请求发送错误消息（不会断开连接）
 func processCommand(client *Client) {
-
+	// TODO 空请求
+	/* test code */
+	for _, a := range client.args {
+		fmt.Println(a.StrVal())
+	}
+	client.args = make([]*DbObject, 0)
 }

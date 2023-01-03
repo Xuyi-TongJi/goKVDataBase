@@ -1,11 +1,10 @@
 package core
 
 import (
-	"errors"
-	"fmt"
 	. "goRedis/data_structure"
 	"goRedis/net"
 	"log"
+	"strconv"
 	"strings"
 )
 
@@ -33,14 +32,18 @@ type Client struct {
 	queryLength int
 	// query command type
 	cmdType CmdType
-	// TODO
+	// bulk string数组长度
 	bulkNum int
-	// TODO
+	// bulk length string数组下一个string的长度
 	bulkLength int
 	// Server
 	server *Server
 	// isClosed
 	isClosed bool
+	// 是否有读到一半没有读完的请求
+	isQueryProcessing bool
+	// 是否可以进行下一次命令处理
+	canDoNextCommandHandle bool
 }
 
 func (client *Client) expandQueryBufIfNeeded() {
@@ -49,26 +52,29 @@ func (client *Client) expandQueryBufIfNeeded() {
 	}
 }
 
-func (client *Client) findCrlfFromQueryBuffer() (int, error) {
-	index := strings.Index(string(client.queryBuffer[:client.queryLength]), "\r\n")
-	if index < 0 {
-		return -1, errors.New(fmt.Sprintf("Client %d cannot find CRLF in query buffer\n", client.fd))
-	}
-	return index, nil
+// findCrlfFromQueryBuffer
+// CRLF: \r\n
+func (client *Client) findCrlfFromQueryBuffer() int {
+	return strings.Index(string(client.queryBuffer[:client.queryLength]), "\r\n")
+}
+
+func (client *Client) getNumberFromQuery(startIndex, endIndex int) (int, error) {
+	return strconv.Atoi(string(client.queryBuffer[startIndex:endIndex]))
 }
 
 func NewClient(fd int, server *Server) *Client {
 	return &Client{
-		fd:          fd,
-		args:        make([]*DbObject, 0),
-		reply:       NewList(StrEqual),
-		sentLength:  0,
-		queryBuffer: make([]byte, IoBufferSize),
-		queryLength: 0,
-		cmdType:     UNKNOWN,
-		bulkNum:     0,
-		bulkLength:  0,
-		server:      server,
+		fd:                fd,
+		args:              make([]*DbObject, 0),
+		reply:             NewList(StrEqual),
+		sentLength:        0,
+		queryBuffer:       make([]byte, IoBufferSize),
+		queryLength:       0,
+		cmdType:           UNKNOWN,
+		bulkNum:           0,
+		bulkLength:        0,
+		server:            server,
+		isQueryProcessing: false,
 	}
 }
 
@@ -99,4 +105,5 @@ func ResetClient(client *Client) {
 	client.cmdType = UNKNOWN
 	client.bulkNum = 0
 	client.bulkLength = 0
+	client.isQueryProcessing = false
 }
