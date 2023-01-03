@@ -1,4 +1,4 @@
-package main
+package net
 
 import (
 	"log"
@@ -53,7 +53,7 @@ func Connect(host [4]byte, port int) int {
 	// 初始化socket
 	socket, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
 	if err != nil {
-		log.Printf("[TCPSERVER CONNECT ERROR] Tcp Server connect init socket error, err = %s", err)
+		log.Printf("[TCPSERVER CONNECTION ERROR] Tcp Server connect init socket error, err = %s", err)
 		return -1
 	}
 	var address unix.SockaddrInet4
@@ -61,15 +61,21 @@ func Connect(host [4]byte, port int) int {
 	address.Port = port
 	err = unix.Connect(socket, &address)
 	if err != nil {
-		log.Printf("[TCPSERVER CONNECT ERROR] Tcp Server connect error, err = %s", err)
+		log.Printf("[TCPSERVER CONNECTION ERROR] Tcp Server connect error, err = %s", err)
 		unix.Close(socket)
 		return -1
 	}
 	return socket
 }
 
-// Accept 接受客户端连接, 返回连接文件描述符nfd
+// Accept 接受客户端连接, 返回连接文件描述符nfd(socket)
+// fd listening fd
 func Accept(fd int) (int, error) {
 	nfd, _, err := unix.Accept(fd)
 	return nfd, err
+}
+
+// Close 断开连接
+func Close(fd int) error {
+	return unix.Close(fd)
 }

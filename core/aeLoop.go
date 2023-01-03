@@ -1,9 +1,10 @@
-package main
+package core
 
 import (
-	"golang.org/x/sys/unix"
 	"log"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // AE Loop
@@ -17,13 +18,14 @@ type FeType int
 type TeType int
 
 // FileEvent事件类型与Epoll监听类型映射
+// READABLE --> EPOLLIN  WRITEABLE --> EPOLLOUT
 var FeToEpoll [3]uint32 = [3]uint32{0, unix.EPOLLIN, unix.EPOLLOUT}
 
 const (
-	FeReadable  FeType = 0x01
-	FeWriteable FeType = 0x02
-	TeNormal    TeType = 0x01
-	TeOnce      TeType = 0x02
+	READABLE  FeType = 0x01
+	WRITEABLE FeType = 0x02
+	NORMAL    TeType = 0x01
+	ONCE      TeType = 0x02
 )
 
 // AeFileProc File Event回调函数
@@ -62,10 +64,11 @@ type AeLoop struct {
 	fileEventFd     int
 	timeEventNextId int
 	stop            bool
+	server          *Server
 }
 
 func getAeFileEventKey(fd int, mask FeType) int {
-	if mask == FeReadable {
+	if mask == READABLE {
 		return fd
 	} else {
 		return fd * -1
@@ -76,12 +79,12 @@ func getAeFileEventKey(fd int, mask FeType) int {
 func (loop *AeLoop) getEpollMask(fd int) uint32 {
 	// 注册过读事件
 	var mask uint32 = 0
-	if _, ext := loop.AeFileEvents[getAeFileEventKey(fd, FeReadable)]; ext {
-		mask |= FeToEpoll[FeReadable]
+	if _, ext := loop.AeFileEvents[getAeFileEventKey(fd, READABLE)]; ext {
+		mask |= FeToEpoll[READABLE]
 	}
 	// 注册过写事件
-	if _, ext := loop.AeFileEvents[getAeFileEventKey(fd, FeWriteable)]; ext {
-		mask |= FeToEpoll[FeWriteable]
+	if _, ext := loop.AeFileEvents[getAeFileEventKey(fd, WRITEABLE)]; ext {
+		mask |= FeToEpoll[WRITEABLE]
 	}
 	return mask
 }
@@ -103,7 +106,7 @@ func (loop *AeLoop) AddFileEvent(fd int, mask FeType, proc AeFileProc, extra int
 		Events: epollEvent,
 	})
 	if err != nil {
-		log.Printf("[AE LOOP ERROR] Ae loop epollCtl error, err: %s", err)
+		log.Printf("[AE LOOP ERROR] Ae loop epollCtl error, err: %s\n", err)
 		return
 	}
 	// add to loop
@@ -131,7 +134,7 @@ func (loop *AeLoop) RemoveFileEvent(fd int, mask FeType) {
 		Events: epollEvent,
 	})
 	if err != nil {
-		log.Printf("[AE LOOP EPOLL_CTL ERROR] Ae loop epollCtl error, err: %s", err)
+		log.Printf("[AE LOOP EPOLL_CTL ERROR] Ae loop epollCtl error, err: %s\n", err)
 		return
 	}
 	// remove from loop
@@ -212,15 +215,15 @@ func (loop *AeLoop) AeWait() ([]*AeFileEvent, []*AeTimeEvent, error) {
 	for i := 0; i < n; i += 1 {
 		// EPOLLIN -> FeReadable
 		if events[i].Events&unix.EPOLLIN != 0 {
-			if _, ext := loop.AeFileEvents[getAeFileEventKey(int(events[i].Fd), FeReadable)]; ext {
-				fe := loop.AeFileEvents[getAeFileEventKey(int(events[i].Fd), FeReadable)]
+			if _, ext := loop.AeFileEvents[getAeFileEventKey(int(events[i].Fd), READABLE)]; ext {
+				fe := loop.AeFileEvents[getAeFileEventKey(int(events[i].Fd), READABLE)]
 				fileEvents = append(fileEvents, fe)
 			}
 		}
 		// EPOLLOUT -> FeWriteable
 		if events[i].Events&unix.EPOLLOUT != 0 {
-			if _, ext := loop.AeFileEvents[getAeFileEventKey(int(events[i].Fd), FeWriteable)]; ext {
-				fe := loop.AeFileEvents[getAeFileEventKey(int(events[i].Fd), FeWriteable)]
+			if _, ext := loop.AeFileEvents[getAeFileEventKey(int(events[i].Fd), WRITEABLE)]; ext {
+				fe := loop.AeFileEvents[getAeFileEventKey(int(events[i].Fd), WRITEABLE)]
 				fileEvents = append(fileEvents, fe)
 			}
 		}
@@ -242,9 +245,9 @@ func (loop *AeLoop) AeWait() ([]*AeFileEvent, []*AeTimeEvent, error) {
 func (loop *AeLoop) AeProcess(fileEvents []*AeFileEvent, timeEvents []*AeTimeEvent) {
 	for _, timeEvent := range timeEvents {
 		timeEvent.proc(loop, timeEvent.id, timeEvent.extra)
-		if timeEvent.mask == TeOnce {
+		if timeEvent.mask == ONCE {
 			loop.RemoveTimeEvent(timeEvent.id)
-		} else {
+		} else if timeEvent.mask == NORMAL {
 			timeEvent.nextExecTime = getTime() + timeEvent.interval
 		}
 	}
@@ -259,7 +262,7 @@ func (loop *AeLoop) AeMain() {
 	for !loop.stop {
 		fileEvents, timeEvents, err := loop.AeWait()
 		if err != nil {
-			log.Printf("[AE LOOP AEMAIN ERROR] AeWait error, err: %s", err)
+			log.Printf("[AE LOOP AEMAIN ERROR] AeWait error, err: %s\n", err)
 			loop.stop = true
 			return
 		}
@@ -270,18 +273,15 @@ func (loop *AeLoop) AeMain() {
 }
 
 // AeLoopCreate 创建一个AeLoop
-func AeLoopCreate() (*AeLoop, error) {
+func AeLoopCreate(server *Server) (*AeLoop, error) {
 	// 系统调用：创建EPOLL监听文件描述符
-	epollFd, err := unix.EpollCreate1(0)
-	if err != nil {
-		return nil, err
-	}
 	loop := &AeLoop{
 		AeFileEvents:    make(map[int]*AeFileEvent, 0),
 		AeTimeEvents:    nil,
 		timeEventNextId: 1,
-		fileEventFd:     epollFd,
+		fileEventFd:     -1,
 		stop:            false,
+		server:          server,
 	}
 	return loop, nil
 }
