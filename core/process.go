@@ -5,6 +5,8 @@ import (
 	"fmt"
 	. "goRedis/data_structure"
 	"goRedis/net"
+	"goRedis/service"
+	"goRedis/util"
 	"log"
 	"strings"
 )
@@ -20,12 +22,6 @@ const (
 )
 
 // database server process requests and responses core lib
-// ReadQueryFromClient and SendReplyToClient
-
-const (
-	// 一次查询命令最长字节大小
-	MaxQueryLength int = 1024 * 4
-)
 
 // readQueryFromClient 从Client中读数据
 // 滑动窗口法(可能一次发过来好几条命令)，必要时扩容，确保留出一个MaxQueryLength的Buffer空间
@@ -33,6 +29,7 @@ const (
 // 遇到错误时，断开连接
 func readQueryFromClient(loop *AeLoop, fd int, extra interface{}) {
 	client := extra.(*Client)
+	maxQueryLength := int(client.server.MaxQueryLength)
 	// expand if needed
 	client.expandQueryBufIfNeeded()
 	// unix C read 至多读一个MaxQueryLength
@@ -43,7 +40,7 @@ func readQueryFromClient(loop *AeLoop, fd int, extra interface{}) {
 		return
 	}
 	client.queryLength += n
-	if client.queryLength > MaxQueryLength {
+	if client.queryLength > maxQueryLength {
 		log.Printf("[READ QUERY FROM CLIENT ERROR] Client %d query length overflow error\n", client.fd)
 		FreeClient(client)
 		return
@@ -55,9 +52,40 @@ func readQueryFromClient(loop *AeLoop, fd int, extra interface{}) {
 	}
 }
 
-// sendReplyToClient 向Client中写数据[不能直接阻塞写]
+// sendReplyToClient client fd EPOLLOUT事件回调函数
+// Write系统调用 向Client中写数据
 func sendReplyToClient(loop *AeLoop, fd int, extra interface{}) {
-
+	client := extra.(*Client)
+	// write every reply to client socket writing pipeline
+	// system call : write
+	var sentBuffer []byte
+	for client.reply.Length() > 0 {
+		// a new reply object
+		if client.sentLength == 0 {
+			rep := client.reply.First()
+			sentBuffer = []byte(rep.StrVal())
+		}
+		n, err := net.Write(fd, sentBuffer[client.sentLength:])
+		if err != nil {
+			// Write异常
+			log.Printf("[SEND REPLY TO CLIENT ERROR] Send reply to client %d error, err = %s\n", client.fd, err)
+			FreeClient(client)
+			return
+		}
+		client.sentLength += n
+		if client.sentLength == len(sentBuffer) {
+			// send a complete reply
+			client.reply.RemoveFirst()
+			client.sentLength = 0
+		} else {
+			// 没有写完，下次EPOLL_WAIT返回时再写
+			break
+		}
+	}
+	if client.reply.Empty() {
+		// remove WRITEABLE file event
+		loop.RemoveFileEvent(client.fd, WRITEABLE)
+	}
 }
 
 // processRequest 处理请求 功能：将请求string转为Client对象中的args
@@ -92,12 +120,13 @@ func processRequest(client *Client) error {
 			break
 		} else {
 			processCommand(client)
+			client.canDoNextCommandHandle = false
 		}
 	}
 	return nil
 }
 
-// handleInlineRequest 解析inline请求
+// handleInlineRequest 解析inline请求string
 // query string -> client.args
 // queryBuffer至少一个MaxQueryLength大小，如果在一个MaxQueryLength大小还未找到CRLF,则为不合法请求，直接断开连接
 // 滑动窗口
@@ -123,7 +152,7 @@ func handleInlineRequest(client *Client) error {
 	return nil
 }
 
-// handleBulkRequeset 解析Bulk请求
+// handleBulkRequeset 解析Bulk请求string
 // query string -> client.args
 // 滑动窗口
 // error -> 解析发生错误，则返回error，断开连接
@@ -134,9 +163,9 @@ func handleBulkRequest(client *Client) error {
 		if crlfIndex == -1 {
 			return errors.New(fmt.Sprintf("Query Length overflows\n"))
 		}
-		bNum, err := client.getNumberFromQuery(1, crlfIndex)
+		bNum, err := client.getNumberFromQueryBuffer(1, crlfIndex)
 		if err != nil {
-			return errors.New("[CLIENT HANDLE BULK REQUEST ERROR] Illegal client protocol format")
+			return errors.New("Illegal client protocol format, illegal bulk number")
 		}
 		client.isQueryProcessing = true
 		client.canDoNextCommandHandle = false
@@ -152,35 +181,34 @@ func handleBulkRequest(client *Client) error {
 		// find bulkLength
 		if client.bulkLength == 0 {
 			if client.queryBuffer[0] != '$' {
-				return errors.New("[CLIENT HANDLE BULK REQUEST ERROR] Illegal client protocol format")
+				return errors.New("Illegal client protocol format, illegal bulk length symbol")
 			}
 			crlfIndex := client.findCrlfFromQueryBuffer()
 			if crlfIndex == -1 {
 				break
 			}
-			bLength, err := client.getNumberFromQuery(1, crlfIndex)
+			bLength, err := client.getNumberFromQueryBuffer(1, crlfIndex)
 			if err != nil {
-				return errors.New("[CLIENT HANDLE BULK REQUEST ERROR] Illegal client protocol format")
+				return errors.New("Illegal client protocol format, illegal bulk length")
 			}
 			client.bulkLength = bLength
 			// move sliding window
 			client.queryBuffer = append(client.queryBuffer[crlfIndex+2:])
 			client.queryLength -= crlfIndex + 2
 		}
-		// find next string element
-		crlfIndex := client.findCrlfFromQueryBuffer()
-		if crlfIndex == -1 {
+		// find next string element (based on bulkLength)
+		if client.queryLength < client.bulkLength+2 {
 			break
 		}
 		// build client arg
 		newArg := &DbObject{
 			Type: STR,
-			Val:  string(client.queryBuffer[:crlfIndex]),
+			Val:  string(client.queryBuffer[:client.bulkLength]),
 		}
 		client.args = append(client.args, newArg)
+		client.queryBuffer = append(client.queryBuffer[client.bulkLength+2:])
+		client.queryLength -= client.bulkLength + 2
 		client.bulkLength = 0
-		client.queryBuffer = append(client.queryBuffer[:crlfIndex+2])
-		client.queryLength -= crlfIndex + 2
 		client.bulkNum -= 1
 	}
 	// 下一次command可以执行
@@ -193,11 +221,20 @@ func handleBulkRequest(client *Client) error {
 
 // processCommand 根据client中的args，进行命令执行
 // 如果请求无法执行（非法请求），则向请求发送错误消息（不会断开连接）
+// 非法请求：清空client所有的request args
 func processCommand(client *Client) {
-	// TODO 空请求
-	/* test code */
-	for _, a := range client.args {
-		fmt.Println(a.StrVal())
+	if len(client.args) == 0 {
+		// empty request
+		return
 	}
+	log.Printf("[PROCESSING COMMAND] Processing command of client %d, command type : %s\n", client.fd, client.args[0].StrVal())
+	msg := service.Handle(client.args, client.server.Db)
+	// reset args
 	client.args = make([]*DbObject, 0)
+	if msg == util.ERROR_QUIT {
+		// disconnect
+		FreeClient(client)
+	} else {
+		client.AddReplyStr(msg)
+	}
 }

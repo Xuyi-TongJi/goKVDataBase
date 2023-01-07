@@ -120,6 +120,7 @@ func (loop *AeLoop) AddFileEvent(fd int, mask FeType, proc AeFileProc, extra int
 }
 
 // RemoveFileEvent 移除FileEvent事件
+// fd的相应事件不存在，do nothing
 func (loop *AeLoop) RemoveFileEvent(fd int, mask FeType) {
 	var op int
 	epollEvent := loop.getEpollMask(fd)
@@ -129,12 +130,10 @@ func (loop *AeLoop) RemoveFileEvent(fd int, mask FeType) {
 	} else {
 		op = unix.EPOLL_CTL_MOD
 	}
-	err := unix.EpollCtl(loop.fileEventFd, op, fd, &unix.EpollEvent{
+	if err := unix.EpollCtl(loop.fileEventFd, op, fd, &unix.EpollEvent{
 		Fd:     int32(fd),
 		Events: epollEvent,
-	})
-	if err != nil {
-		log.Printf("[AE LOOP EPOLL_CTL ERROR] Ae loop epollCtl error, err: %s\n", err)
+	}); err != nil {
 		return
 	}
 	// remove from loop
@@ -207,7 +206,8 @@ func (loop *AeLoop) AeWait() ([]*AeFileEvent, []*AeTimeEvent, error) {
 	// 系统调用 EPOLL_WAIT返回的可以进行操作的FileEvent
 	var events [128]unix.EpollEvent
 	n, err := unix.EpollWait(loop.fileEventFd, events[:], int(waitTime))
-	if err != nil {
+	// n == -1 ENTIR错误，可以再次执行AeLoop循环
+	if n != -1 && err != nil {
 		return nil, nil, err
 	}
 	// collect file events

@@ -13,8 +13,6 @@ import (
 const (
 	// IoBufferSize client io buffer size
 	IoBufferSize int = 1024 * 16
-	MaxBulk      int = 1024 * 4
-	MaxInline    int = 1024 * 4
 )
 
 type Client struct {
@@ -22,10 +20,6 @@ type Client struct {
 	fd int
 	// request object after ReadQueryFromClient
 	args []*DbObject
-	// response object after command process
-	reply *List
-	// TODO
-	sentLength int
 	// query bffer read from socket
 	queryBuffer []byte
 	// sliding window query length
@@ -44,11 +38,15 @@ type Client struct {
 	isQueryProcessing bool
 	// 是否可以进行下一次命令处理
 	canDoNextCommandHandle bool
+	// response object after command process List中的一个元素代表一次命令执行的返回结果string
+	reply *List
+	// 还未发送完的reply，已经发送的大小
+	sentLength int
 }
 
 func (client *Client) expandQueryBufIfNeeded() {
-	if len(client.queryBuffer)-client.queryLength < MaxQueryLength {
-		client.queryBuffer = append(client.queryBuffer, make([]byte, MaxQueryLength)...)
+	if len(client.queryBuffer)-client.queryLength < int(client.server.MaxQueryLength) {
+		client.queryBuffer = append(client.queryBuffer, make([]byte, int(client.server.MaxQueryLength))...)
 	}
 }
 
@@ -58,8 +56,26 @@ func (client *Client) findCrlfFromQueryBuffer() int {
 	return strings.Index(string(client.queryBuffer[:client.queryLength]), "\r\n")
 }
 
-func (client *Client) getNumberFromQuery(startIndex, endIndex int) (int, error) {
+func (client *Client) getNumberFromQueryBuffer(startIndex, endIndex int) (int, error) {
 	return strconv.Atoi(string(client.queryBuffer[startIndex:endIndex]))
+}
+
+// AppReply
+// add a reply DbObject to client's reply list
+func (client *Client) AddReply(toAdd *DbObject) {
+	shouldAddFe := client.reply.Empty()
+	// append last
+	client.reply.AppendLast(toAdd)
+	if shouldAddFe {
+		client.server.Loop.AddFileEvent(client.fd, WRITEABLE, sendReplyToClient, client)
+	}
+}
+
+// AppReplyStr
+// add a reply string to client's reply list
+func (client *Client) AddReplyStr(s string) {
+	obj := NewStr(s)
+	client.AddReply(obj)
 }
 
 func NewClient(fd int, server *Server) *Client {
@@ -106,4 +122,10 @@ func ResetClient(client *Client) {
 	client.bulkNum = 0
 	client.bulkLength = 0
 	client.isQueryProcessing = false
+}
+
+// processDisconnectionFromClient 客户端异常关闭EPOLLHUP事件回调函数
+func processDisconnectionFromClient(loop *AeLoop, fd int, extra interface{}) {
+	client := extra.(*Client)
+	FreeClient(client)
 }

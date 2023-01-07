@@ -1,5 +1,7 @@
 package data_structure
 
+import "log"
+
 // List 双向链表
 // Node 链表节点 val为DbObject类型
 // EqualFunc 节点判等函数
@@ -38,6 +40,10 @@ func NewList(equalFunction EqualFunction) *List {
 	}
 }
 
+func NewDefaultListValueObj() interface{} {
+	return NewList(StrEqual)
+}
+
 func (list *List) Length() int {
 	return list.length
 }
@@ -67,6 +73,22 @@ func (list *List) AppendLast(toAdd *DbObject) {
 	list.tail.prev = current
 	current.next = list.tail
 	current.prev = last
+	list.length += 1
+}
+
+// GetLastNode
+func (list *List) GetLastNode() *Node {
+	if list.length > 0 {
+		return list.tail.prev
+	}
+	return nil
+}
+
+func (list *List) DeleteByNode(node *Node) {
+	log.Printf("[DELETE NODE] %s\n", node.val.StrVal())
+	node.prev.next = node.next
+	node.next.prev = node.prev
+	list.length -= 1
 }
 
 func (list *List) AppendFirst(toAdd *DbObject) {
@@ -80,6 +102,7 @@ func (list *List) AppendFirst(toAdd *DbObject) {
 	list.head.next = current
 	current.next = next
 	current.prev = list.head
+	list.length += 1
 }
 
 // Delete if not exist, do nothing
@@ -94,7 +117,28 @@ func (list *List) Delete(val *DbObject) {
 		// delete
 		last.next = current.next
 		current.next.prev = last
+		list.length -= 1
 	}
+}
+
+func (list *List) RemoveFirst() {
+	if list.length > 0 {
+		list.Delete(list.First())
+	}
+}
+
+func (list *List) Empty() bool {
+	return list.length == 0
+}
+
+func (list *List) Members() []*DbObject {
+	result := make([]*DbObject, list.length)
+	var index int = 0
+	for current := list.head.next; current != list.tail; current = current.next {
+		result[index] = current.val
+		index += 1
+	}
+	return result
 }
 
 // find O(N) return nil if not exist

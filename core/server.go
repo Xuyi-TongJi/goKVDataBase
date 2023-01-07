@@ -2,27 +2,30 @@ package core
 
 import (
 	"errors"
-	. "goRedis/data_structure"
+	. "goRedis/db"
 	"goRedis/net"
+	"goRedis/service"
 	"log"
 )
 
 // DataBase server core lib
 
 type Server struct {
-	Fd            int
-	Db            *DataBase
-	Clients       map[int]*Client
-	Loop          *AeLoop
-	Port          int
-	MaxConnection int32
+	Fd             int
+	Db             *Database
+	Clients        map[int]*Client
+	Loop           *AeLoop
+	Port           int
+	MaxConnection  int32
+	MaxQueryLength int32
 }
 
 func NewServer(config *Config) (*Server, error) {
 	// create listening socket
 	server := &Server{
-		Port:          config.Port,
-		MaxConnection: config.MaxConnection,
+		Port:           config.Port,
+		MaxConnection:  config.MaxConnection,
+		MaxQueryLength: config.MaxQueryLength,
 	}
 	// listening fd
 	fd := net.TcpServer(config.Port)
@@ -35,12 +38,7 @@ func NewServer(config *Config) (*Server, error) {
 		return nil, err
 	}
 	server.Loop = loop
-	server.Db = &DataBase{
-		// key : string
-		data: NewDict(StrHash, StrEqual),
-		// key : string
-		expire: NewDict(StrHash, StrEqual),
-	}
+	server.Db = NewDatabase()
 	server.Clients = make(map[int]*Client)
 	return server, nil
 }
@@ -52,10 +50,12 @@ func NewServer(config *Config) (*Server, error) {
 func AcceptHandler(loop *AeLoop, fd int, extra interface{}) {
 	socket, err := net.Accept(fd)
 	if err != err {
-		log.Printf("[Listening Socket Accept Handler ERROR] Init client socket error, err :%s", err)
+		log.Printf("[LISTENING SOCKET ACCEPT HANDLER ERROR] Accept client error, err :%s", err)
 		return
 	}
 	client := NewClient(socket, loop.server)
 	loop.server.Clients[socket] = client
 	loop.AddFileEvent(socket, READABLE, readQueryFromClient, client)
+	client.AddReplyStr(service.WELCOME)
+	log.Printf("[LISTENING SOCKET ACCEPT HANDLER] Accept client success, connection build, fd = %d\n", client.fd)
 }

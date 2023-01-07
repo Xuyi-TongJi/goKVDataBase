@@ -48,7 +48,8 @@ func TcpServer(port int) int {
 	return serverSocket
 }
 
-// Connect 连接客户端，返回socket
+/* test code */
+// Connect host connect server
 func Connect(host [4]byte, port int) int {
 	// 初始化socket
 	socket, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
