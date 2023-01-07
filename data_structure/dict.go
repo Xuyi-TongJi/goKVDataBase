@@ -230,8 +230,9 @@ func (dict *Dict) find(key *DbObject) (*Entry, error) {
 // if key exist -> then do Set
 // if key doesn't exsit -> then do Add
 // val can be nil (set)
+// an empty string key is not availble
 func (dict *Dict) Set(key, val *DbObject) error {
-	if key == nil || key.Type != STR {
+	if key == nil || key.Type != STR || len(key.StrVal()) == 0 {
 		return errors.New("illegal key")
 	}
 	if dict.isRehashing() {
@@ -280,6 +281,7 @@ func (dict *Dict) Delete(key *DbObject) error {
 
 // Get
 // if not exist, return an error
+// obj != nil only if it exists
 func (dict *Dict) Get(key *DbObject) (*DbObject, error) {
 	if key == nil || key.Type != STR {
 		return nil, errors.New("illegal key")

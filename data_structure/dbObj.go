@@ -14,12 +14,14 @@ type HashFunction func(key *DbObject) int64
 type CompareFunction func(a, b *DbObject) int
 
 const (
-	STR  DbObjectType = 0x01
-	LIST DbObjectType = 0x02
-	SET  DbObjectType = 0x03
-	ZSET DbObjectType = 0x04
-	DICT DbObjectType = 0x05
-	NODE DbObjectType = 0x06
+	STR       DbObjectType = 0x01
+	LIST      DbObjectType = 0x02
+	SET       DbObjectType = 0x03
+	ZSET      DbObjectType = 0x04
+	DICT      DbObjectType = 0x05
+	HASH      DbObjectType = 0x06
+	LINKDLIST DbObjectType = 0x07
+	NODE      DbObjectType = 0x08
 )
 
 type DbObject struct {

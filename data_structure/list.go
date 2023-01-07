@@ -1,7 +1,5 @@
 package data_structure
 
-import "log"
-
 // List 双向链表
 // Node 链表节点 val为DbObject类型
 // EqualFunc 节点判等函数
@@ -40,10 +38,6 @@ func NewList(equalFunction EqualFunction) *List {
 	}
 }
 
-func NewDefaultListValueObj() interface{} {
-	return NewList(StrEqual)
-}
-
 func (list *List) Length() int {
 	return list.length
 }
@@ -77,6 +71,8 @@ func (list *List) AppendLast(toAdd *DbObject) {
 }
 
 // GetLastNode
+// return a node
+// serve for set key
 func (list *List) GetLastNode() *Node {
 	if list.length > 0 {
 		return list.tail.prev
@@ -85,7 +81,6 @@ func (list *List) GetLastNode() *Node {
 }
 
 func (list *List) DeleteByNode(node *Node) {
-	log.Printf("[DELETE NODE] %s\n", node.val.StrVal())
 	node.prev.next = node.next
 	node.next.prev = node.prev
 	list.length -= 1
@@ -121,10 +116,29 @@ func (list *List) Delete(val *DbObject) {
 	}
 }
 
-func (list *List) RemoveFirst() {
-	if list.length > 0 {
-		list.Delete(list.First())
+// RemoveFirst
+// return nil if length == 0
+// O(1)
+func (list *List) RemoveFirst() *DbObject {
+	if list.length == 0 {
+		return nil
 	}
+	ret := list.First()
+	list.head.next = list.head.next.next
+	list.head.next.prev = list.head
+	list.length -= 1
+	return ret
+}
+
+func (list *List) RemoveLast() *DbObject {
+	if list.length == 0 {
+		return nil
+	}
+	ret := list.Last()
+	list.tail.prev = list.tail.prev.prev
+	list.tail.prev.next = list.tail
+	list.length -= 1
+	return ret
 }
 
 func (list *List) Empty() bool {

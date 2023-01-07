@@ -28,8 +28,10 @@ type Database struct {
 func init() {
 	// defaultDataStructure
 	defaultDataStructure = make(map[DbObjectType]defaultNewDataStructure, 0)
-	defaultDataStructure[LIST] = NewDefaultListValueObj
+	defaultDataStructure[LIST] = NewDefaultLinkedListValueObj
 	defaultDataStructure[ZSET] = NewDefaultZsetValueObj
+	defaultDataStructure[HASH] = NewDefaultHashValueObj
+	defaultDataStructure[SET] = NewDefaultSetValueObj
 }
 
 // string
