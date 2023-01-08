@@ -583,6 +583,7 @@ func lpushCommandProcess(args []*DbObject, db *Database) string {
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
+	log.Printf("dfsadfsadfsadfsadfsadfsadfasdfsadfsadfsadfsadfsadfsd")
 	list := obj.Val.(*LinkedList)
 	list.Lpush(value)
 	log.Printf("[LPUSH COMMAND]Success\n")
@@ -591,8 +592,7 @@ func lpushCommandProcess(args []*DbObject, db *Database) string {
 
 func lpopCommandProcess(args []*DbObject, db *Database) string {
 	key := args[1]
-	value := args[2]
-	if !checkString(key) || !checkString(value) {
+	if !checkString(key) {
 		return packErrorMessage("Illegal request parameter")
 	}
 	obj, err := db.GetKeyIfExist(key, LINKDLIST)
@@ -625,8 +625,7 @@ func rpushCommandProcess(args []*DbObject, db *Database) string {
 
 func rpopCommandProcess(args []*DbObject, db *Database) string {
 	key := args[1]
-	value := args[2]
-	if !checkString(key) || !checkString(value) {
+	if !checkString(key) {
 		return packErrorMessage("Illegal request parameter")
 	}
 	obj, err := db.GetKeyIfExist(key, LINKDLIST)
