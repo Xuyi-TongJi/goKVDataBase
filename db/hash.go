@@ -23,7 +23,11 @@ func NewDefaultHashValueObj() interface{} {
 }
 
 func (hash *Hash) Get(key *DbObject) (*DbObject, error) {
-	return hash.data.Get(key)
+	obj, err := hash.data.Get(key)
+	if err == ERROR_KEY_NOT_EXIST {
+		return nil, errors.New("Field does not exist in the hash key")
+	}
+	return obj, err
 }
 
 func (hash *Hash) Set(key, val *DbObject) error {
@@ -34,5 +38,9 @@ func (hash *Hash) Set(key, val *DbObject) error {
 }
 
 func (hash *Hash) Delete(key *DbObject) error {
-	return hash.Delete(key)
+	err := hash.data.Delete(key)
+	if err == ERROR_KEY_NOT_EXIST {
+		return errors.New("Field does not exist in the hash key")
+	}
+	return err
 }

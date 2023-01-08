@@ -52,7 +52,17 @@ func (db *Database) GetStr(key *DbObject) (*DbObject, error) {
 	return val, nil
 }
 
-// get key object
+// GetKeyIfExist
+// get the value of key in db only if it exists now
+func (db *Database) GetKeyIfExist(key *DbObject, expectedType DbObjectType) (*DbObject, error) {
+	obj, _ := db.doGet(key, expectedType)
+	if obj == nil {
+		return nil, ERROR_KEY_NOT_EXIST
+	}
+	return obj, nil
+}
+
+// GetKeyObject
 // if key not exist, then add a default key (except string key)
 func (db *Database) GetKeyObject(key *DbObject, expectedType DbObjectType) (*DbObject, error) {
 	obj, err := db.doGet(key, expectedType)

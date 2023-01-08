@@ -80,7 +80,7 @@ func init() {
 		minArgs: 4,
 		maxArgs: 4,
 	}
-	commandTable["ZANGE"] = &DataBaseCommand{
+	commandTable["ZRANGE"] = &DataBaseCommand{
 		name:    "zrange",
 		proc:    zrangeCommandProcess,
 		id:      1<<17 | 2,
@@ -294,7 +294,7 @@ func zrangeCommandProcess(args []*DbObject, db *Database) string {
 	if err1 != nil || err2 != nil || !checkString(key) {
 		return packErrorMessage("Illegal parameter, score must be an integer")
 	}
-	obj, err := db.GetKeyObject(key, ZSET)
+	obj, err := db.GetKeyIfExist(key, ZSET)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
@@ -316,7 +316,7 @@ func zremCommandProcess(args []*DbObject, db *Database) string {
 	if !checkString(member) || !checkString(key) {
 		return packErrorMessage("Illegal request parameter")
 	}
-	obj, err := db.GetKeyObject(args[1], ZSET)
+	obj, err := db.GetKeyIfExist(args[1], ZSET)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
@@ -336,7 +336,7 @@ func zincrebyCommandProcess(args []*DbObject, db *Database) string {
 	if err != nil || !checkString(key) || !checkString(member) {
 		return packErrorMessage("Illegal request parameter")
 	}
-	obj, err := db.GetKeyObject(key, ZSET)
+	obj, err := db.GetKeyIfExist(key, ZSET)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
@@ -348,7 +348,7 @@ func zincrebyCommandProcess(args []*DbObject, db *Database) string {
 	return packString("Query OK")
 }
 
-// set(hash)
+// hash
 
 // 'hset' Process Function
 func hsetCommandProcess(args []*DbObject, db *Database) string {
@@ -363,9 +363,10 @@ func hsetCommandProcess(args []*DbObject, db *Database) string {
 		return packErrorMessage(err.Error())
 	}
 	hash := obj.Val.(*Hash)
-	if err = hash.Set(key, value); err != nil {
+	if err = hash.Set(field, value); err != nil {
 		return packErrorMessage(err.Error())
 	}
+	log.Printf("[HSET COMMAND]Success\n")
 	return packString("Query OK")
 }
 
@@ -376,7 +377,7 @@ func hgetCommandProcess(args []*DbObject, db *Database) string {
 	if !checkString(key) || !checkString(field) {
 		return packErrorMessage("Illegal request parameter")
 	}
-	obj, err := db.GetKeyObject(key, HASH)
+	obj, err := db.GetKeyIfExist(key, HASH)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
@@ -385,6 +386,7 @@ func hgetCommandProcess(args []*DbObject, db *Database) string {
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
+	log.Printf("[HGET COMMAND]Success\n")
 	return packString(obj.StrVal())
 }
 
@@ -395,7 +397,7 @@ func hdelCommandProcess(args []*DbObject, db *Database) string {
 	if !checkString(key) || !checkString(field) {
 		return packErrorMessage("Illegal request parameter")
 	}
-	obj, err := db.GetKeyObject(key, HASH)
+	obj, err := db.GetKeyIfExist(key, HASH)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
@@ -403,6 +405,7 @@ func hdelCommandProcess(args []*DbObject, db *Database) string {
 	if err = hash.Delete(field); err != nil {
 		return packErrorMessage(err.Error())
 	}
+	log.Printf("[HDEL COMMAND]Success\n")
 	return packString("Query OK")
 }
 
@@ -423,6 +426,7 @@ func saddCommandProcess(args []*DbObject, db *Database) string {
 	if err = set.Add(member); err != nil {
 		return packErrorMessage(err.Error())
 	}
+	log.Printf("[SADD COMMAND]Success\n")
 	return packString("Query OK")
 }
 
@@ -442,6 +446,7 @@ func smembersCommandProcess(args []*DbObject, db *Database) string {
 	for i, m := range members {
 		strs[i] = m.StrVal()
 	}
+	log.Printf("[SMEMBERS COMMAND]Success\n")
 	return packBulkArray(strs)
 }
 
@@ -457,6 +462,7 @@ func scardCommandProcess(args []*DbObject, db *Database) string {
 	}
 	set := obj.Val.(*Set)
 	length := set.Length()
+	log.Printf("[SCARD COMMAND]Success\n")
 	return packInt(length)
 }
 
@@ -475,6 +481,7 @@ func sremCommandProcess(args []*DbObject, db *Database) string {
 	if err = set.Remove(member); err != nil {
 		return packErrorMessage(err.Error())
 	}
+	log.Printf("[SREM COMMAND]Success\n")
 	return packBulkString("Query OK")
 }
 
@@ -500,6 +507,7 @@ func sinterCommandProcess(args []*DbObject, db *Database) string {
 	for i, m := range members {
 		strs[i] = m.StrVal()
 	}
+	log.Printf("[SINTER COMMAND]Success\n")
 	return packBulkArray(strs)
 }
 
@@ -525,6 +533,7 @@ func sunionCommandProcess(args []*DbObject, db *Database) string {
 	for i, m := range members {
 		strs[i] = m.StrVal()
 	}
+	log.Printf("[SUNION COMMAND]Success\n")
 	return packBulkArray(strs)
 }
 
@@ -542,6 +551,7 @@ func lpushCommandProcess(args []*DbObject, db *Database) string {
 	}
 	list := obj.Val.(*LinkedList)
 	list.Lpush(value)
+	log.Printf("[LPUSH COMMAND]Success\n")
 	return packString("Query OK")
 }
 
@@ -559,6 +569,7 @@ func lpopCommandProcess(args []*DbObject, db *Database) string {
 	if len := list.Len(); len == 0 {
 		return packErrorMessage("List is empty")
 	}
+	log.Printf("[LPOP COMMAND]Success\n")
 	return packString(list.Lpop().StrVal())
 }
 
@@ -574,6 +585,7 @@ func rpushCommandProcess(args []*DbObject, db *Database) string {
 	}
 	list := obj.Val.(*LinkedList)
 	list.Rpush(value)
+	log.Printf("[RPUSH COMMAND]Success\n")
 	return packString("Query OK")
 }
 
@@ -591,6 +603,7 @@ func rpopCommandProcess(args []*DbObject, db *Database) string {
 	if len := list.Len(); len == 0 {
 		return packErrorMessage("List is empty")
 	}
+	log.Printf("[RPOP COMMAND]Success\n")
 	return packString(list.Rpop().StrVal())
 }
 
@@ -631,18 +644,14 @@ func packBulkString(msg string) string {
 }
 
 func packBulkArray(msgs []string) string {
-	len := len(msgs)
-	result := make([]string, len)
-	for i := 0; i < len; i += 1 {
-		result[i] = packBulkString(msgs[i])
-	}
-	// head
+	n := len(msgs)
 	var builder strings.Builder
+	// head
 	builder.WriteString(BulkArrayHead)
-	builder.WriteString(strconv.Itoa(len))
-	for i := 0; i < len; i += 1 {
-		builder.WriteString(result[i])
-		builder.WriteString(CRLF)
+	builder.WriteString(strconv.Itoa(n))
+	builder.WriteString(CRLF)
+	for i := 0; i < n; i += 1 {
+		builder.WriteString(packBulkString(msgs[i]))
 	}
 	return builder.String()
 }

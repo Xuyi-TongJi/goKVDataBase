@@ -99,7 +99,7 @@ func FreeClient(client *Client) {
 	if client.isClosed {
 		return
 	}
-	log.Printf("[CLIENT DISCONNECTION...] Connection with client %d is disconnecting...\n", client.fd)
+	log.Printf("[CLIENT DISCONNECTION...] Client %d is disconnecting...\n", client.fd)
 	// remove file event
 	client.server.Loop.RemoveFileEvent(client.fd, READABLE)
 	client.server.Loop.RemoveFileEvent(client.fd, WRITEABLE)
@@ -110,6 +110,7 @@ func FreeClient(client *Client) {
 	}
 	// remove from server
 	delete(client.server.Clients, client.fd)
+	log.Printf("[CLIENT DISCONNECTION...] Client %d has disconnected\n", client.fd)
 }
 
 // ResetClient 重置client参数
