@@ -38,6 +38,7 @@ func init() {
 	typeMap[':'] = INT
 	typeMap['$'] = BULKSTR
 	typeMap['*'] = BULKARR
+
 	funcMap = make(map[ReType]resolveFunction, 0)
 	funcMap[STRING] = resolveStr
 	funcMap[ERROR] = resolveStr
@@ -103,7 +104,6 @@ func StartReader(conn net.Conn, stop chan error) {
 			byteBuffer = append(byteBuffer, make([]byte, MaxMessageSize)...)
 		}
 		n, err := conn.Read(byteBuffer[length:])
-		// fmt.Printf("[CLIENT READER] Receive message of %d bytes\n", n)
 		if err != nil {
 			stop <- err
 			break

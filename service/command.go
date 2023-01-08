@@ -167,7 +167,41 @@ func init() {
 		maxArgs: 3,
 	}
 	// list
-
+	commandTable["LPUSH"] = &DataBaseCommand{
+		name:    "lpush",
+		proc:    lpushCommandProcess,
+		id:      1<<20 | 1,
+		minArgs: 3,
+		maxArgs: 3,
+	}
+	commandTable["LPOP"] = &DataBaseCommand{
+		name:    "lpop",
+		proc:    lpopCommandProcess,
+		id:      1<<20 | 2,
+		minArgs: 2,
+		maxArgs: 2,
+	}
+	commandTable["RPUSH"] = &DataBaseCommand{
+		name:    "rpush",
+		proc:    rpushCommandProcess,
+		id:      1<<20 | 3,
+		minArgs: 3,
+		maxArgs: 3,
+	}
+	commandTable["RPOP"] = &DataBaseCommand{
+		name:    "rpop",
+		proc:    rpopCommandProcess,
+		id:      1<<20 | 4,
+		minArgs: 2,
+		maxArgs: 2,
+	}
+	commandTable["LLEN"] = &DataBaseCommand{
+		name:    "llen",
+		proc:    llenCommandProcess,
+		id:      1<<20 | 5,
+		minArgs: 2,
+		maxArgs: 2,
+	}
 	// system
 	commandTable["QUIT"] = &DataBaseCommand{
 		name:    "quit",
@@ -436,7 +470,7 @@ func smembersCommandProcess(args []*DbObject, db *Database) string {
 	if !checkString(key) {
 		return packErrorMessage("Illegal request parameter")
 	}
-	obj, err := db.GetKeyObject(key, SET)
+	obj, err := db.GetKeyIfExist(key, SET)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
@@ -456,7 +490,7 @@ func scardCommandProcess(args []*DbObject, db *Database) string {
 	if !checkString(key) {
 		return packErrorMessage("Illegal request parameter")
 	}
-	obj, err := db.GetKeyObject(key, SET)
+	obj, err := db.GetKeyIfExist(key, SET)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
@@ -473,7 +507,7 @@ func sremCommandProcess(args []*DbObject, db *Database) string {
 	if !checkString(key) || !checkString(member) {
 		return packErrorMessage("Illegal request parameter")
 	}
-	obj, err := db.GetKeyObject(key, SET)
+	obj, err := db.GetKeyIfExist(key, SET)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
@@ -492,12 +526,12 @@ func sinterCommandProcess(args []*DbObject, db *Database) string {
 	if !checkString(key1) || !checkString(key2) {
 		return packErrorMessage("Illegal request parameter")
 	}
-	obj1, err := db.GetKeyObject(key1, SET)
+	obj1, err := db.GetKeyIfExist(key1, SET)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
 	set1 := obj1.Val.(*Set)
-	obj2, err := db.GetKeyObject(key2, SET)
+	obj2, err := db.GetKeyIfExist(key2, SET)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
@@ -518,12 +552,12 @@ func sunionCommandProcess(args []*DbObject, db *Database) string {
 	if !checkString(key1) || !checkString(key2) {
 		return packErrorMessage("Illegal request parameter")
 	}
-	obj1, err := db.GetKeyObject(key1, SET)
+	obj1, err := db.GetKeyIfExist(key1, SET)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
 	set1 := obj1.Val.(*Set)
-	obj2, err := db.GetKeyObject(key2, SET)
+	obj2, err := db.GetKeyIfExist(key2, SET)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
@@ -561,7 +595,7 @@ func lpopCommandProcess(args []*DbObject, db *Database) string {
 	if !checkString(key) || !checkString(value) {
 		return packErrorMessage("Illegal request parameter")
 	}
-	obj, err := db.GetKeyObject(key, LINKDLIST)
+	obj, err := db.GetKeyIfExist(key, LINKDLIST)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
@@ -595,7 +629,7 @@ func rpopCommandProcess(args []*DbObject, db *Database) string {
 	if !checkString(key) || !checkString(value) {
 		return packErrorMessage("Illegal request parameter")
 	}
-	obj, err := db.GetKeyObject(key, LINKDLIST)
+	obj, err := db.GetKeyIfExist(key, LINKDLIST)
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
@@ -605,6 +639,19 @@ func rpopCommandProcess(args []*DbObject, db *Database) string {
 	}
 	log.Printf("[RPOP COMMAND]Success\n")
 	return packString(list.Rpop().StrVal())
+}
+
+func llenCommandProcess(args []*DbObject, db *Database) string {
+	key := args[1]
+	if !checkString(key) {
+		return packErrorMessage("Illegal request parameter")
+	}
+	obj, err := db.GetKeyIfExist(key, LINKDLIST)
+	if err != nil {
+		return packErrorMessage(err.Error())
+	}
+	list := obj.Val.(*LinkedList)
+	return packInt(list.Len())
 }
 
 // system

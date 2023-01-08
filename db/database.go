@@ -149,9 +149,7 @@ func (db *Database) deleteIfExpired(key *DbObject) bool {
 // init database
 func NewDatabase() *Database {
 	return &Database{
-		// key : string
-		data: NewDict(StrHash, StrEqual),
-		// key : string
+		data:   NewDict(StrHash, StrEqual),
 		expire: NewDict(StrHash, StrEqual),
 	}
 }
