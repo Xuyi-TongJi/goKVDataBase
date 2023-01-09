@@ -16,7 +16,7 @@ const (
 	DefaultMaxConnection int32 = 1024
 	DefaultPort          int   = 6379
 	MaxMaxConnection     int32 = 4096
-	MaxMaxQueryLength    int32 = 4096
+	MaxMaxQueryLength    int32 = 1024 << 16
 )
 
 // LoadConfig

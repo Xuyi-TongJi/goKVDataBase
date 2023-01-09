@@ -14,6 +14,7 @@ type defaultNewDataStructure func() interface{}
 const (
 	// default expire time : 1 hour (nano)
 	DefaultExpireTime int64 = 3600 * 1000000000
+	MaxIntegerNumber  int64 = 1 << 60
 )
 
 var defaultDataStructure map[DbObjectType]defaultNewDataStructure
@@ -45,17 +46,111 @@ func (db *Database) SetStr(key, value *DbObject, expireTime int64) error {
 }
 
 func (db *Database) GetStr(key *DbObject) (*DbObject, error) {
-	val, err := db.doGet(key, STR)
+	val, err := db.doGetByType(key, STR)
 	if err != nil {
 		return nil, err
 	}
 	return val, nil
 }
 
+func (db *Database) Increment(key *DbObject, value int64) error {
+	obj, err := db.doGetByType(key, STR)
+	if err != nil {
+		return err
+	}
+	oldVal, err := obj.IntVal()
+	if err != nil {
+		return errors.New("The value of this key is not a number")
+	}
+	oldVal += value
+	if oldVal > MaxScore {
+		return errors.New("The new value will be overflowed")
+	}
+	return db.doSetStr(key, NewObjectByInt(oldVal))
+}
+
+func (db *Database) Incr(key *DbObject) error {
+	return db.Increment(key, 1)
+}
+
+func (db *Database) Decr(key *DbObject) error {
+	return db.Increment(key, -1)
+}
+
+// keys
+
+// Exist
+func (db *Database) Exist(key *DbObject) (bool, error) {
+	obj, err := db.doGet(key)
+	if err != nil {
+		return false, err
+	}
+	return obj != nil, nil
+}
+
+// Expired
+// judge whether a key is expired or not
+func (db *Database) Expired(key *DbObject, expectedType DbObjectType) (bool, error) {
+	ext, err := db.data.Exist(key)
+	if err != nil {
+		return false, err
+	}
+	if ext {
+		if db.deleteIfExpired(key) {
+			return true, nil
+		} else {
+			return false, nil
+		}
+	} else {
+		return false, ERROR_KEY_NOT_EXIST
+	}
+}
+
+// RenameKey
+// rename a key only if it exists in db
+func (db *Database) RenameKey(key *DbObject, newName *DbObject) error {
+	obj, err := db.doGet(key)
+	if err != nil {
+		return err
+	}
+	// key must in the db
+	expiredTime, err := db.doGetExpired(key)
+	if err != nil {
+		return err
+	}
+	if err = db.RemoveKey(key); err != nil {
+		return err
+	}
+	if err = db.doSet(newName, obj); err != nil {
+		return err
+	}
+	// set expiredTime
+	if err = db.expire.Set(newName, NewObjectByInt(expiredTime)); err != nil {
+		return err
+	}
+	return nil
+}
+
+// RemoveKey
+// remove a key only if it exists in db
+func (db *Database) RemoveKey(key *DbObject) error {
+	ext, err := db.Exist(key)
+	if err != nil {
+		return err
+	}
+	if ext {
+		if err = db.doRemove(key); err != nil {
+			return err
+		}
+		return nil
+	}
+	return ERROR_KEY_NOT_EXIST
+}
+
 // GetKeyIfExist
 // get the value of key in db only if it exists now
 func (db *Database) GetKeyIfExist(key *DbObject, expectedType DbObjectType) (*DbObject, error) {
-	obj, _ := db.doGet(key, expectedType)
+	obj, _ := db.doGetByType(key, expectedType)
 	if obj == nil {
 		return nil, ERROR_KEY_NOT_EXIST
 	}
@@ -65,7 +160,7 @@ func (db *Database) GetKeyIfExist(key *DbObject, expectedType DbObjectType) (*Db
 // GetKeyObject
 // if key not exist, then add a default key (except string key)
 func (db *Database) GetKeyObject(key *DbObject, expectedType DbObjectType) (*DbObject, error) {
-	obj, err := db.doGet(key, expectedType)
+	obj, err := db.doGetByType(key, expectedType)
 	if err != nil || obj == nil {
 		// add when not exist or expired
 		if err == ERROR_KEY_NOT_EXIST || err == util.ERROR_EXPIRED {
@@ -80,6 +175,8 @@ func (db *Database) GetKeyObject(key *DbObject, expectedType DbObjectType) (*DbO
 	return obj, nil
 }
 
+// doSetStr
+// if the key exist, do update; otherwise, do add
 func (db *Database) doSetStr(key, val *DbObject) error {
 	oldVal, err := db.data.Get(key)
 	if oldVal != nil && oldVal.Type != STR {
@@ -96,8 +193,21 @@ func (db *Database) doSetStr(key, val *DbObject) error {
 }
 
 // doGet
+// get a value of key
+func (db *Database) doGet(key *DbObject) (*DbObject, error) {
+	val, err := db.data.Get(key)
+	if err != nil {
+		return nil, err
+	}
+	if db.deleteIfExpired(key) {
+		return nil, util.ERROR_EXPIRED
+	}
+	return val, err
+}
+
+// doGetByType
 // get a value of key after expired is judged
-func (db *Database) doGet(key *DbObject, expectedType DbObjectType) (*DbObject, error) {
+func (db *Database) doGetByType(key *DbObject, expectedType DbObjectType) (*DbObject, error) {
 	val, err := db.data.Get(key)
 	if val != nil && val.Type != expectedType {
 		return nil, errors.New("Illegal key type")
@@ -109,6 +219,15 @@ func (db *Database) doGet(key *DbObject, expectedType DbObjectType) (*DbObject, 
 		return nil, util.ERROR_EXPIRED
 	}
 	return val, nil
+}
+
+// get the expired time of key if it exists in database
+func (db *Database) doGetExpired(key *DbObject) (int64, error) {
+	expired, err := db.expire.Get(key)
+	if err != nil {
+		return 0, err
+	}
+	return expired.IntVal()
 }
 
 // add an empty data structure of key to database
@@ -129,8 +248,27 @@ func (db *Database) doAddDefault(key *DbObject, expectedType DbObjectType, expir
 	return obj, nil
 }
 
-// delete over expired key
+// doRemove
+// remove the key if it exists
+func (db *Database) doRemove(key *DbObject) error {
+	if err := db.data.Delete(key); err != nil {
+		return err
+	}
+	if err := db.expire.Delete(key); err != nil {
+		return err
+	}
+	return nil
+}
 
+// doSet
+// do set key and value
+// if key already exists, update it whatever
+func (db *Database) doSet(key, val *DbObject) error {
+	return db.data.Set(key, val)
+}
+
+//
+// check whether the key is expired or not, if it is, then delete it
 func (db *Database) deleteIfExpired(key *DbObject) bool {
 	current := getTime()
 	if key != nil {

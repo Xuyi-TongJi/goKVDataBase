@@ -13,7 +13,7 @@ func main() {
 		path = os.Args[1]
 	}
 	config := core.LoadConfig(path)
-	log.Printf("[MAIN LOAD CONFIG] Load config success, port = %d, maxConnection = %d\n", config.Port, config.MaxConnection)
+	log.Printf("[MAIN LOAD CONFIG] Load config success, port = %d, maxConnection = %d\n, maxQueryLength = %d\n", config.Port, config.MaxConnection, config.MaxQueryLength)
 	server, err := core.NewServer(config)
 	if err != nil {
 		log.Printf("[MAIN INIT TCP SERVER ERROR] Init tcp server error, err :%s\n", err)

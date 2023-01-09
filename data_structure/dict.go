@@ -229,8 +229,9 @@ func (dict *Dict) find(key *DbObject) (*Entry, error) {
 // Set / Add
 // if key exist -> then do Set
 // if key doesn't exsit -> then do Add
-// val can be nil (set)
+// val can be set nil
 // an empty string key is not availble
+// key type must be STR
 func (dict *Dict) Set(key, val *DbObject) error {
 	if key == nil || key.Type != STR || len(key.StrVal()) == 0 {
 		return errors.New("illegal key")

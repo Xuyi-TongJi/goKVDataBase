@@ -130,11 +130,11 @@ func (skipList *SkipList) Range(left, right *DbObject) ([]*DbObject, []*DbObject
 	return scores, values
 }
 
-func (zset *SkipList) find(score *DbObject) []*SkipListNode {
+func (skipList *SkipList) find(score *DbObject) []*SkipListNode {
 	result := make([]*SkipListNode, maxLevel)
-	current := zset.root
+	current := skipList.root
 	for i := maxLevel - 1; i >= 0; i -= 1 {
-		for current.next[i] != nil && zset.compareFunction(score, current.next[i].score) == 1 {
+		for current.next[i] != nil && skipList.compareFunction(score, current.next[i].score) == 1 {
 			current = current.next[i]
 		}
 		// result[i] the last node < val on level i

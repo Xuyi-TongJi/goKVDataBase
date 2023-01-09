@@ -17,6 +17,7 @@ import (
 //                       3  hash
 //                       4  set
 //                       5  list
+//                       6  keys
 
 const (
 	ErrorHead      string = "-ERROR: "
@@ -38,85 +39,112 @@ type DataBaseCommand struct {
 	maxArgs int32
 }
 
-// commandTable 全局CommandTable
-var commandTable map[string]*DataBaseCommand
+var router map[string]*DataBaseCommand
 
 func init() {
-	commandTable = make(map[string]*DataBaseCommand, 0)
+	router = make(map[string]*DataBaseCommand, 0)
 	// string
-	commandTable["GET"] = &DataBaseCommand{
+	router["GET"] = &DataBaseCommand{
 		name:    "get",
 		proc:    getCommandProcess,
 		id:      1<<16 | 1,
 		minArgs: 2,
 		maxArgs: 2,
 	}
-	commandTable["SET"] = &DataBaseCommand{
+	router["SET"] = &DataBaseCommand{
 		name:    "set",
 		proc:    setCommandProcess,
 		id:      1<<16 | 2,
 		minArgs: 3,
 		maxArgs: 3,
 	}
-	commandTable["SETEX"] = &DataBaseCommand{
+	router["SETEX"] = &DataBaseCommand{
 		name:    "setex",
 		proc:    setexCommandProcess,
 		id:      1<<16 | 3,
 		minArgs: 4,
 		maxArgs: 4,
 	}
-	commandTable["SETNX"] = &DataBaseCommand{
+	router["SETNX"] = &DataBaseCommand{
 		name:    "setnx",
 		proc:    setnxCommandProcess,
 		id:      1<<16 | 4,
 		minArgs: 3,
 		maxArgs: 3,
 	}
+	router["INCRBY"] = &DataBaseCommand{
+		name:    "incrby",
+		proc:    incrbyCommandProcess,
+		id:      1<<16 | 5,
+		minArgs: 3,
+		maxArgs: 3,
+	}
+	router["INCR"] = &DataBaseCommand{
+		name:    "incr",
+		proc:    incrCommandProcess,
+		id:      1<<16 | 6,
+		minArgs: 2,
+		maxArgs: 2,
+	}
+	router["DECR"] = &DataBaseCommand{
+		name:    "decr",
+		proc:    decrCommandProcess,
+		id:      1<<16 | 7,
+		minArgs: 2,
+		maxArgs: 2,
+	}
 	// zset
-	commandTable["ZADD"] = &DataBaseCommand{
+	router["ZADD"] = &DataBaseCommand{
 		name:    "zadd",
 		proc:    zaddCommandProcess,
 		id:      1<<17 | 1,
 		minArgs: 4,
 		maxArgs: 4,
 	}
-	commandTable["ZRANGE"] = &DataBaseCommand{
+	router["ZRANGE"] = &DataBaseCommand{
 		name:    "zrange",
 		proc:    zrangeCommandProcess,
 		id:      1<<17 | 2,
 		minArgs: 4,
 		maxArgs: 4,
 	}
-	commandTable["ZINCREBY"] = &DataBaseCommand{
+	router["ZINCREBY"] = &DataBaseCommand{
 		name:    "zincreby",
 		proc:    zincrebyCommandProcess,
 		id:      1<<17 | 3,
 		minArgs: 4,
 		maxArgs: 4,
 	}
-	commandTable["ZREM"] = &DataBaseCommand{
+	router["ZREM"] = &DataBaseCommand{
 		name:    "zrange",
 		proc:    zremCommandProcess,
 		id:      1<<17 | 4,
 		minArgs: 3,
 		maxArgs: 3,
 	}
+	router["ZSCORE"] = &DataBaseCommand{
+		name:    "zscore",
+		proc:    zscoreCommandProcess,
+		id:      1<<17 | 5,
+		minArgs: 3,
+		maxArgs: 3,
+	}
 	// hash
-	commandTable["HSET"] = &DataBaseCommand{
+	router["HSET"] = &DataBaseCommand{
 		name:    "hset",
 		proc:    hsetCommandProcess,
 		id:      1<<18 | 1,
 		minArgs: 4,
 		maxArgs: 4,
 	}
-	commandTable["HGET"] = &DataBaseCommand{
+	router["HGET"] = &DataBaseCommand{
 		name:    "hget",
 		proc:    hgetCommandProcess,
 		id:      1<<18 | 2,
 		minArgs: 3,
 		maxArgs: 3,
 	}
-	commandTable["HDEL"] = &DataBaseCommand{
+	router["HDEL"] = &DataBaseCommand{
 		name:    "hdel",
 		proc:    hdelCommandProcess,
 		id:      1<<18 | 3,
@@ -124,42 +152,42 @@ func init() {
 		maxArgs: 3,
 	}
 	// set
-	commandTable["SADD"] = &DataBaseCommand{
+	router["SADD"] = &DataBaseCommand{
 		name:    "sadd",
 		proc:    saddCommandProcess,
 		id:      1<<19 | 1,
 		minArgs: 3,
 		maxArgs: 3,
 	}
-	commandTable["SMEMBERS"] = &DataBaseCommand{
+	router["SMEMBERS"] = &DataBaseCommand{
 		name:    "smembers",
 		proc:    smembersCommandProcess,
 		id:      1<<19 | 2,
 		minArgs: 2,
 		maxArgs: 2,
 	}
-	commandTable["SCARD"] = &DataBaseCommand{
+	router["SCARD"] = &DataBaseCommand{
 		name:    "smembers",
 		proc:    scardCommandProcess,
 		id:      1<<19 | 3,
 		minArgs: 2,
 		maxArgs: 2,
 	}
-	commandTable["SINTER"] = &DataBaseCommand{
+	router["SINTER"] = &DataBaseCommand{
 		name:    "sinter",
 		proc:    sinterCommandProcess,
 		id:      1<<19 | 4,
 		minArgs: 3,
 		maxArgs: 3,
 	}
-	commandTable["SUNION"] = &DataBaseCommand{
+	router["SUNION"] = &DataBaseCommand{
 		name:    "sunion",
 		proc:    sunionCommandProcess,
 		id:      1<<19 | 5,
 		minArgs: 3,
 		maxArgs: 3,
 	}
-	commandTable["SREM"] = &DataBaseCommand{
+	router["SREM"] = &DataBaseCommand{
 		name:    "srem",
 		proc:    sremCommandProcess,
 		id:      1<<19 | 6,
@@ -167,43 +195,58 @@ func init() {
 		maxArgs: 3,
 	}
 	// list
-	commandTable["LPUSH"] = &DataBaseCommand{
+	router["LPUSH"] = &DataBaseCommand{
 		name:    "lpush",
 		proc:    lpushCommandProcess,
 		id:      1<<20 | 1,
 		minArgs: 3,
 		maxArgs: 3,
 	}
-	commandTable["LPOP"] = &DataBaseCommand{
+	router["LPOP"] = &DataBaseCommand{
 		name:    "lpop",
 		proc:    lpopCommandProcess,
 		id:      1<<20 | 2,
 		minArgs: 2,
 		maxArgs: 2,
 	}
-	commandTable["RPUSH"] = &DataBaseCommand{
+	router["RPUSH"] = &DataBaseCommand{
 		name:    "rpush",
 		proc:    rpushCommandProcess,
 		id:      1<<20 | 3,
 		minArgs: 3,
 		maxArgs: 3,
 	}
-	commandTable["RPOP"] = &DataBaseCommand{
+	router["RPOP"] = &DataBaseCommand{
 		name:    "rpop",
 		proc:    rpopCommandProcess,
 		id:      1<<20 | 4,
 		minArgs: 2,
 		maxArgs: 2,
 	}
-	commandTable["LLEN"] = &DataBaseCommand{
+	router["LLEN"] = &DataBaseCommand{
 		name:    "llen",
 		proc:    llenCommandProcess,
 		id:      1<<20 | 5,
 		minArgs: 2,
 		maxArgs: 2,
 	}
+	// keys
+	router["RENAME"] = &DataBaseCommand{
+		name:    "rename",
+		proc:    renameCommandProcess,
+		id:      1<<21 | 1,
+		minArgs: 3,
+		maxArgs: 3,
+	}
+	router["DEL"] = &DataBaseCommand{
+		name:    "del",
+		proc:    delCommandProcess,
+		id:      1<<21 | 2,
+		minArgs: 2,
+		maxArgs: 2,
+	}
 	// system
-	commandTable["QUIT"] = &DataBaseCommand{
+	router["QUIT"] = &DataBaseCommand{
 		name:    "quit",
 		proc:    quitCommandProcess,
 		id:      1,
@@ -214,7 +257,7 @@ func init() {
 
 func Handle(args []*DbObject, db *Database) string {
 	cmdType := strings.ToUpper(args[0].StrVal())
-	cmd := commandTable[cmdType]
+	cmd := router[cmdType]
 	if cmd == nil {
 		return packErrorMessage("Unknown command type")
 	}
@@ -284,6 +327,46 @@ func setnxCommandProcess(args []*DbObject, db *Database) string {
 		return packErrorMessage(err.Error())
 	}
 	log.Printf("[SETNX COMMAND]Success\n")
+	return packString("Query OK")
+}
+
+// 'incrby' Process Function
+func incrbyCommandProcess(args []*DbObject, db *Database) string {
+	key := args[1]
+	increment, err := args[2].IntVal()
+	if !checkString(key) || err != nil {
+		return packErrorMessage("illegal request parameter")
+	}
+	if err := db.Increment(key, increment); err != nil {
+		return packErrorMessage(err.Error())
+	}
+	log.Printf("[INCRBY COMMAND]Success\n")
+	return packString("Query OK")
+}
+
+// 'incr' Process Function
+func incrCommandProcess(args []*DbObject, db *Database) string {
+	key := args[1]
+	if !checkString(key) {
+		return packErrorMessage("illegal request parameter")
+	}
+	if err := db.Incr(key); err != nil {
+		return packErrorMessage(err.Error())
+	}
+	log.Printf("[INCR COMMAND]Success\n")
+	return packString("Query OK")
+}
+
+// 'decr' Process Function
+func decrCommandProcess(args []*DbObject, db *Database) string {
+	key := args[1]
+	if !checkString(key) {
+		return packErrorMessage("illegal request parameter")
+	}
+	if err := db.Decr(key); err != nil {
+		return packErrorMessage(err.Error())
+	}
+	log.Printf("[DECR COMMAND]Success\n")
 	return packString("Query OK")
 }
 
@@ -380,6 +463,26 @@ func zincrebyCommandProcess(args []*DbObject, db *Database) string {
 	}
 	log.Printf("[ZINCREBY COMMAND]Success\n")
 	return packString("Query OK")
+}
+
+// 'zscore' Process Function
+func zscoreCommandProcess(args []*DbObject, db *Database) string {
+	key := args[1]
+	member := args[2]
+	if !checkString(key) || !checkString(member) {
+		return packErrorMessage("Illegal request parameter")
+	}
+	obj, err := db.GetKeyIfExist(key, ZSET)
+	if err != nil {
+		return packErrorMessage(err.Error())
+	}
+	zset := obj.Val.(*Zset)
+	score, err := zset.GetScore(member)
+	if err != nil {
+		return packErrorMessage(err.Error())
+	}
+	log.Printf("[ZSCORE COMMAND]Success\n")
+	return packInt(int(score))
 }
 
 // hash
@@ -653,6 +756,31 @@ func llenCommandProcess(args []*DbObject, db *Database) string {
 }
 
 // system
+
+func delCommandProcess(args []*DbObject, db *Database) string {
+	key := args[1]
+	if !checkString(key) {
+		return packErrorMessage("Illegal request parameter")
+	}
+	if err := db.RemoveKey(key); err != nil {
+		return packErrorMessage(err.Error())
+	}
+	log.Printf("[DEL COMMAND]Success\n")
+	return packString("Query OK")
+}
+
+func renameCommandProcess(args []*DbObject, db *Database) string {
+	key := args[1]
+	newKey := args[2]
+	if !checkString(key) || !checkString(newKey) {
+		return packErrorMessage("Illegal request parameter")
+	}
+	if err := db.RenameKey(key, newKey); err != nil {
+		return packErrorMessage(err.Error())
+	}
+	log.Printf("[RENAME COMMAND]Success\n")
+	return packString("Query OK")
+}
 
 func quitCommandProcess(args []*DbObject, db *Database) string {
 	return util.ERROR_QUIT
