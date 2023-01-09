@@ -583,7 +583,6 @@ func lpushCommandProcess(args []*DbObject, db *Database) string {
 	if err != nil {
 		return packErrorMessage(err.Error())
 	}
-	log.Printf("dfsadfsadfsadfsadfsadfsadfasdfsadfsadfsadfsadfsadfsd")
 	list := obj.Val.(*LinkedList)
 	list.Lpush(value)
 	log.Printf("[LPUSH COMMAND]Success\n")
