@@ -13,10 +13,11 @@ type Config struct {
 }
 
 const (
-	DefaultMaxConnection int32 = 1024
-	DefaultPort          int   = 6379
-	MaxMaxConnection     int32 = 4096
-	MaxMaxQueryLength    int32 = 1024 << 16
+	DefaultMaxConnection  int32 = 1024
+	DefaultPort           int   = 6379
+	DefaultMaxQueryLength int32 = 1024 << 4
+	MaxMaxConnection      int32 = 4096
+	MaxMaxQueryLength     int32 = 1024 << 16
 )
 
 // LoadConfig
@@ -27,7 +28,7 @@ func LoadConfig(path string) *Config {
 		return &Config{
 			Port:           DefaultPort,
 			MaxConnection:  DefaultMaxConnection,
-			MaxQueryLength: MaxMaxQueryLength,
+			MaxQueryLength: DefaultMaxQueryLength,
 		}
 	}
 	if config.MaxConnection > MaxMaxConnection {
