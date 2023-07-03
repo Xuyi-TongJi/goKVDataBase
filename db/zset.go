@@ -58,7 +58,7 @@ func (zset *Zset) AddMember(member *DbObject, score int64) error {
 	if obj != nil {
 		return errors.New("Member already exists")
 	}
-	if err != nil && err != ERROR_KEY_NOT_EXIST {
+	if err != nil && err != ErrorKeyNotExist {
 		return err
 	}
 	query := NewObjectByInt(score)

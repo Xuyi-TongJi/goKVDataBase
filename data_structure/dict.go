@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	ERROR_KEY_NOT_EXIST error = errors.New("key does not exist in database")
+	ErrorKeyNotExist error = errors.New("key does not exist in database")
 )
 
 type Entry struct {
@@ -221,7 +221,7 @@ func (dict *Dict) find(key *DbObject) (*Entry, error) {
 			current = current.next
 		}
 	}
-	return nil, ERROR_KEY_NOT_EXIST
+	return nil, ErrorKeyNotExist
 }
 
 // public
@@ -277,7 +277,7 @@ func (dict *Dict) Delete(key *DbObject) error {
 			last = current
 		}
 	}
-	return ERROR_KEY_NOT_EXIST
+	return ErrorKeyNotExist
 }
 
 // Get
@@ -347,7 +347,7 @@ func (dict *Dict) Exist(key *DbObject) (bool, error) {
 		dict.rehash(RehashStep)
 	}
 	entry, err := dict.find(key)
-	if err != nil && err != ERROR_KEY_NOT_EXIST {
+	if err != nil && errors.Is(err, ErrorKeyNotExist) {
 		return false, err
 	}
 	// entry != nil
