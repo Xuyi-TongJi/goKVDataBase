@@ -43,7 +43,7 @@ func (set *Set) Remove(key *DbObject) error {
 	} else if err != nil {
 		return err
 	} else {
-		return ERROR_KEY_NOT_EXIST
+		return ErrorKeyNotExist
 	}
 }
 

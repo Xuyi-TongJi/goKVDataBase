@@ -388,12 +388,12 @@ func zaddCommandProcess(args []*DbObject, db *Database) string {
 	// do exec
 	zset := obj.Val.(*Zset)
 	_, err = zset.GetScore(member)
-	if err != nil && err != ERROR_KEY_NOT_EXIST {
+	if err != nil && err != ErrorKeyNotExist {
 		return packErrorMessage(err.Error())
 	}
 	if err == nil {
 		zset.UpdateScore(member, score)
-	} else if err == ERROR_KEY_NOT_EXIST {
+	} else if errors.Is(err, ErrorKeyNotExist) {
 		zset.AddMember(member, score)
 	} else {
 		return packErrorMessage(err.Error())
